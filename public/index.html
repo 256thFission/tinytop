@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minigame</title>
+  <title>Simple Minigame Board</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
@@ -14,31 +14,44 @@
       margin-top: 2rem;
     }
     .game-board {
+      position: relative; /* Important for absolute positioning of pieces */
+      overflow: hidden;
       background-color: #fff;
       border: 1px solid #dee2e6;
       border-radius: 0.25rem;
-      position: relative;
       width: 100%;
       height: 600px;
-      overflow: hidden;
+      touch-action: none; /* Important for mobile interactions */
     }
     .piece {
       position: absolute;
-      cursor: pointer;
+      cursor: move; /* Better cursor for draggable elements */
       user-select: none;
       z-index: 1;
+      min-width: 40px; /* Minimum size for pieces */
+      min-height: 40px;
+      max-width: 150px; /* Maximum size for pieces */
+      max-height: 150px;
+      touch-action: none; /* Important for mobile drag and drop */
     }
+
     .piece img {
       width: 100%;
       height: 100%;
       object-fit: contain;
+      pointer-events: none; /* Prevent img from capturing events */
     }
-    .piece.locked {
-      opacity: 0.7;
-      cursor: not-allowed;
-    }
+
     .piece.dragging {
       z-index: 100;
+      opacity: 0.8; /* Visual feedback during drag */
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3); /* Shadow effect during drag */
+    }
+
+    .piece.locked {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.5); /* Red outline for locked pieces */
     }
     .controls {
       margin-top: 1rem;
@@ -61,78 +74,92 @@
     .asset-item:hover {
       background-color: #f8f9fa;
     }
+    .asset-item.active {
+      background-color: #e9ecef;
+    }
     .asset-item img {
       width: 40px;
       height: 40px;
       margin-right: 0.5rem;
       object-fit: contain;
     }
-    .room-info {
+    .game-info {
       margin-bottom: 1rem;
       padding: 0.5rem;
       background-color: #e9ecef;
       border-radius: 0.25rem;
     }
+    #status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+      background-color: #dc3545;
+    }
+    #status-indicator.connected {
+      background-color: #28a745;
+    }
   </style>
 </head>
 <body>
-  <div class="container game-container">
-    <h1 class="mb-4">Minigame Board</h1>
-    
-    <div class="row">
-      <div class="col-md-9">
-        <!-- Room Info and Controls -->
-        <div class="room-info d-flex justify-content-between align-items-center">
-          <div>
-            <strong>Room Code: </strong><span id="room-code-display">Not connected</span>
-          </div>
-          <div>
-            <strong>Connected Players: </strong><span id="player-count">0</span>
-          </div>
+<div class="container game-container">
+  <h1 class="mb-4">Simple Game Board</h1>
+
+  <div class="row">
+    <div class="col-md-9">
+      <!-- Game Info and Controls -->
+      <div class="game-info d-flex justify-content-between align-items-center">
+        <div>
+          <span id="status-indicator"></span>
+          <span id="connection-status">Disconnected</span>
         </div>
-        
-        <!-- Game Board -->
-        <div class="game-board" id="game-board"></div>
-        
-        <!-- Controls -->
-        <div class="controls d-flex justify-content-between">
-          <div>
-            <button id="btn-clear" class="btn btn-outline-danger">Clear Selected</button>
-          </div>
-          <div>
-            <form id="room-form" class="d-flex">
-              <input type="text" id="room-code" class="form-control me-2" placeholder="Enter room code">
-              <button type="submit" class="btn btn-primary">Join Room</button>
-            </form>
-          </div>
+        <div>
+          <strong>Players: </strong><span id="player-count">0</span>
         </div>
       </div>
-      
-      <div class="col-md-3">
-        <!-- Asset Management -->
-        <div class="card">
-          <div class="card-header">
-            Game Assets
-          </div>
-          <div class="card-body">
-            <form id="upload-form" class="mb-3">
-              <div class="mb-3">
-                <input class="form-control" type="file" id="asset-upload" accept="image/*">
-              </div>
-              <button type="submit" class="btn btn-success w-100">Upload Asset</button>
-            </form>
-            
-            <h6>Available Assets</h6>
-            <div class="asset-list" id="asset-list">
-              <!-- Assets will be listed here -->
+
+      <!-- Game Board -->
+      <div class="game-board" id="game-board"></div>
+
+      <!-- Controls -->
+      <div class="controls d-flex justify-content-between">
+        <div>
+          <button id="btn-clear" class="btn btn-outline-danger">Clear Selected</button>
+          <button id="btn-refresh" class="btn btn-outline-secondary ms-2">Refresh Board</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <!-- Asset Management -->
+      <div class="card">
+        <div class="card-header">
+          Game Assets
+        </div>
+        <div class="card-body">
+          <form id="upload-form" class="mb-3">
+            <div class="mb-3">
+              <input class="form-control" type="file" id="asset-upload" accept="image/*">
             </div>
+            <button type="submit" class="btn btn-success w-100">Upload Asset</button>
+          </form>
+
+          <h6>Available Assets</h6>
+          <div class="asset-list" id="asset-list">
+            <!-- Assets will be listed here -->
+            <p class="text-muted">Loading assets...</p>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <script src="js/main.js"></script>
+  <!-- Status Messages -->
+  <div class="alert alert-info mt-3" id="status-message" style="display: none;"></div>
+</div>
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>

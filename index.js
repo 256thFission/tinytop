@@ -25,6 +25,14 @@ const io = socketIo(server, {
   }
 });
 
+
+
+
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -45,7 +53,7 @@ const storage = multer.diskStorage({
     cb(null, `${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
@@ -53,7 +61,7 @@ const upload = multer({
     const filetypes = /jpeg|jpg|png|gif/;
     const mimetype = filetypes.test(file.mimetype);
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     }
@@ -64,11 +72,9 @@ const upload = multer({
 // Serve static files from uploads directory
 app.use('/assets', express.static(path.join(__dirname, 'uploads')));
 
-
-
 // Schedule room cleanup every hour
-setInterval(() => {
-  dataStore.cleanupExpiredRooms();
+setInterval(async () => {
+  await dataStore.cleanupExpiredRooms();
 }, 60 * 60 * 1000);
 
 // Token authority system (in-memory for simplicity)
