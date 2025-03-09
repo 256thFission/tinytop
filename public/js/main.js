@@ -7,7 +7,10 @@ let selectedAsset = null;
 let selectedPiece = null;
 let playerCount = 0;
 let clientId = null;
+let saveGameModal = null;
+let loadStateModal = null;
 let pieces = {};
+
 
 // DOM Elements
 const gameBoard = document.getElementById('game-board');
@@ -60,6 +63,9 @@ async function init() {
     // Add event listeners
     addEventListeners();
 
+    // Initialize modals
+    initModals();
+
     // Request initial game state
     socket.emit('get-game-state');
   } catch (error) {
@@ -67,6 +73,150 @@ async function init() {
     showStatusMessage('Failed to initialize game. Please refresh the page.', 'danger');
   }
 }
+
+
+function initModals() {
+  saveGameModal = new bootstrap.Modal(document.getElementById('saveGameModal'));
+  loadStateModal = new bootstrap.Modal(document.getElementById('loadStateModal'));
+
+  // Setup save button handler in modal
+  document.getElementById('btn-save-confirm').addEventListener('click', () => {
+    const saveName = document.getElementById('save-name').value.trim();
+    saveGameWithName(saveName);
+    saveGameModal.hide();
+  });
+}
+
+// Initialize the save dialog
+function showSaveDialog() {
+  // Generate a default name based on date/time
+  const defaultName = `Game ${new Date().toLocaleString().replace(/[\/,:]/g, '-')}`;
+  document.getElementById('save-name').value = defaultName;
+
+  // Show the modal
+  saveGameModal.show();
+}
+
+// Save the game with the provided name
+async function saveGameWithName(saveName) {
+  try {
+    showStatusMessage('Saving game...', 'info');
+
+    // Use the provided name or generate a timestamp-based one
+    const name = saveName || `Game_${new Date().toISOString().replace(/[:.]/g, '-')}`;
+
+    const response = await fetch(`${API_URL}/api/game/save`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name,
+        clientId
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      showStatusMessage(`Game saved successfully as: ${data.name}`, 'success', 5000);
+    } else {
+      console.error('Failed to save game:', data.error);
+      showStatusMessage(`Failed to save game: ${data.error}`, 'danger');
+    }
+  } catch (error) {
+    console.error('Error saving game:', error);
+    showStatusMessage('Error saving game. Please try again.', 'danger');
+  }
+}
+
+// Load and display the list of saved states
+async function loadSavedStatesList() {
+  try {
+    const response = await fetch(`${API_URL}/api/game/states`);
+    const data = await response.json();
+
+    const statesList = document.getElementById('saved-states-list');
+
+    if (data.success && data.states && data.states.length > 0) {
+      statesList.innerHTML = '';
+
+      data.states.forEach(state => {
+        const row = document.createElement('tr');
+
+        // Format the date
+        const savedDate = new Date(state.savedAt);
+        const formattedDate = savedDate.toLocaleString();
+
+        row.innerHTML = `
+          <td>${state.name || 'Unnamed State'}</td>
+          <td>${formattedDate}</td>
+          <td>
+            <button class="btn btn-sm btn-primary load-state-btn" data-state-id="${state.id}">
+              Load
+            </button>
+          </td>
+        `;
+
+        statesList.appendChild(row);
+      });
+
+      // Add event listeners to load buttons
+      document.querySelectorAll('.load-state-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const stateId = e.target.dataset.stateId;
+          loadGameState(stateId);
+          loadStateModal.hide();
+        });
+      });
+    } else {
+      statesList.innerHTML = '<tr><td colspan="3" class="text-center">No saved states found</td></tr>';
+    }
+  } catch (error) {
+    console.error('Error loading saved states:', error);
+    const statesList = document.getElementById('saved-states-list');
+    statesList.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error loading saved states</td></tr>';
+  }
+}
+
+// Load a specific game state
+async function loadGameState(stateId) {
+  try {
+    showStatusMessage('Loading game state...', 'info');
+
+    const response = await fetch(`${API_URL}/api/game/load-state`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        stateId,
+        clientId
+      })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      showStatusMessage('Game state loaded successfully', 'success', 3000);
+    } else {
+      console.error('Failed to load game state:', data.error);
+      showStatusMessage(`Failed to load game state: ${data.error}`, 'danger');
+    }
+  } catch (error) {
+    console.error('Error loading game state:', error);
+    showStatusMessage('Error loading game state. Please try again.', 'danger');
+  }
+}
+
+// Show the load state dialog
+function showLoadStateDialog() {
+  loadSavedStatesList();
+  loadStateModal.show();
+}
+
+
+
 
 // Connect to the WebSocket server
 async function connectSocket() {
@@ -216,7 +366,25 @@ function setupSocketEvents() {
     showStatusMessage(`Error: ${message}`, 'danger');
   });
 
-  // Handle reconnection
+  socket.on('game-state-loaded', (data) => {
+    console.log('Game state loaded:', data);
+
+    // If it wasn't loaded by us, show a notification
+    if (data.loadedBy !== clientId) {
+      showStatusMessage(`Game state was loaded by another player`, 'info', 3000);
+    }
+  });
+
+  socket.on('game-saved', (data) => {
+    console.log('Game saved:', data);
+
+    // Only show notification if it wasn't saved by this client
+    if (data.savedBy !== clientId) {
+      showStatusMessage(`Game was saved as: ${data.name}`, 'info', 3000);
+    }
+  });
+
+    // Handle reconnection
   socket.on('reconnect', () => {
     console.log('Reconnected to server');
     clientId = socket.id; // Update client ID on reconnection
@@ -256,12 +424,24 @@ function addEventListeners() {
     clearSelection();
   });
 
+
   // Refresh board button
   btnRefresh.addEventListener('click', () => {
     socket.emit('get-game-state');
     showStatusMessage('Refreshing game board...', 'info', 2000);
   });
+
+  // Save game button
+  document.getElementById('btn-save').addEventListener('click', () => {
+    showSaveDialog();
+  });
+
+  // Load state button
+  document.getElementById('btn-load').addEventListener('click', () => {
+    showLoadStateDialog();
+  });
 }
+
 
 // Load available assets
 async function loadAssets() {
