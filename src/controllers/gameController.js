@@ -4,6 +4,7 @@
  * Handles HTTP requests related to game state management
  */
 const gameService = require('../services/game');
+const {getGameStates} = require("../services/game/managers/stateManager");
 const { DEFAULT_GAME_ID } = gameService;
 
 /**
@@ -43,19 +44,19 @@ exports.saveGameState = async (req, res) => {
     };
 
     // Save the game state
-    const result = await gameService.saveGameState(saveData, name);
+    const result = await gameService.saveGameState(saveData, name,DEFAULT_GAME_ID,true);
 
     if (result.success) {
       // Debug info
       console.log('Socket.io available:', req.io ? 'Yes' : 'No');
       
-      // We'll let the socket handler emit the game-saved event
       if (req.io) {
         req.io.emit('game-saved', {
           savedAt: result.savedAt,
           name: result.name,
           stateId: result.stateId,
-          savedBy: clientId || null
+          savedBy: clientId || null,
+          isManual: true
         });
       } else {
         console.error('Socket.io instance not available in request');
@@ -66,7 +67,8 @@ exports.saveGameState = async (req, res) => {
         message: 'Game saved successfully',
         savedAt: result.savedAt,
         name: result.name,
-        stateId: result.stateId
+        stateId: result.stateId,
+        isManual: true
       });
     } else {
       res.status(500).json({ error: 'Failed to save game' });
@@ -85,7 +87,9 @@ exports.saveGameState = async (req, res) => {
 exports.getSavedStates = async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 20;
-    const savedStates = await gameService.getGameStates(DEFAULT_GAME_ID, limit);
+    const manualOnly = req.query.manualOnly !== 'false'; // Default to true
+
+    const savedStates = await getGameStates(DEFAULT_GAME_ID, limit, manualOnly);
 
     res.json({
       success: true,

@@ -26,10 +26,11 @@ const stateManager = {
      * Save the game state
      * @param {Object} state - The game state to save
      * @param {string} [stateName] - Optional name for the state
+     * @param {boolean} [isManual=false] - Whether this is a manual save
      * @param {string} [gameId=DEFAULT_GAME_ID] - The game ID
      * @returns {Promise<Object>} Result with stateId
      */
-    async saveGameState(state, stateName = null, gameId = DEFAULT_GAME_ID) {
+    async saveGameState(state, stateName = null, gameId = DEFAULT_GAME_ID, isManual = false,) {
         try {
             // Generate timestamp and state ID
             const timestamp = Date.now();
@@ -41,7 +42,9 @@ const stateManager = {
                 id: stateId,
                 name: stateName,
                 data: state,
-                savedAt: new Date(timestamp).toISOString()
+                savedAt: new Date(timestamp).toISOString(),
+                isManual: isManual
+
             }));
 
             // Update current state pointer
@@ -65,7 +68,8 @@ const stateManager = {
                 stateId,
                 timestamp,
                 savedAt: new Date(timestamp).toISOString(),
-                name: stateName || stateId
+                name: stateName || stateId,
+                isManual
             };
         } catch (err) {
             console.error('Error saving game state:', err);
@@ -77,15 +81,25 @@ const stateManager = {
      * Get all saved states for a game
      * @param {string} [gameId=DEFAULT_GAME_ID] - The game ID
      * @param {number} [limit=10] - Maximum number of states to retrieve
+     *  @param {boolean} [manualOnly=false] - Whether to return only manual saves
      * @returns {Promise<Array>} Array of game states
      */
-    async getGameStates(gameId = DEFAULT_GAME_ID, limit = 10) {
+    async getGameStates(gameId = DEFAULT_GAME_ID, limit = 10, manualOnly = false) {
         try {
-            // Get the most recent states
+            // Get all states in reverse chronological order
             const stateKey = keys.statesKey(gameId);
-            const states = await redis.zrevrange(stateKey, 0, limit - 1);
+            const states = await redis.zrevrange(stateKey, 0, -1); // Get all states
 
-            return states.map(state => JSON.parse(state));
+            // Parse and filter them
+            let parsedStates = states.map(state => JSON.parse(state));
+
+            // Apply manual-only filter if requested
+            if (manualOnly) {
+                parsedStates = parsedStates.filter(state => state.isManual === true);
+            }
+
+            // Apply limit
+            return parsedStates.slice(0, limit);
         } catch (err) {
             console.error('Error getting game states:', err);
             return [];

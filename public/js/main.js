@@ -133,7 +133,7 @@ async function saveGameWithName(saveName) {
 // Load and display the list of saved states
 async function loadSavedStatesList() {
   try {
-    const response = await fetch(`${API_URL}/api/game/states`);
+    const response = await fetch(`${API_URL}/api/game/states?manualOnly=true`);
     const data = await response.json();
 
     const statesList = document.getElementById('saved-states-list');
