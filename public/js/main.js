@@ -21,6 +21,31 @@ const statusIndicator = document.getElementById('status-indicator');
 const connectionStatus = document.getElementById('connection-status');
 const statusMessage = document.getElementById('status-message');
 
+
+
+
+let lastDragUpdate = 0;
+const DRAG_THROTTLE = 50; // milliseconds between drag updates
+
+// Add this function to main.js (outside of any other function)
+function sendDragUpdate(pieceId, x, y) {
+  const now = Date.now();
+
+  // Only send updates at most every DRAG_THROTTLE milliseconds
+  if (now - lastDragUpdate >= DRAG_THROTTLE) {
+    lastDragUpdate = now;
+
+    // Check if socket is connected and we have a valid piece
+    if (socket && socket.connected && pieces[pieceId]) {
+      socket.emit('drag-piece', {
+        pieceId,
+        x,
+        y
+      });
+    }
+  }
+}
+
 // Initialize the game
 init();
 
@@ -138,6 +163,21 @@ function setupSocketEvents() {
     console.log('Piece moved:', data);
     if (data.playerId !== clientId && pieces[data.pieceId]) {
       movePiece(pieces[data.pieceId].element, data.x, data.y);
+    }
+  });
+
+  socket.on('piece-dragged', (data) => {
+    // Only update pieces moved by other players, not our own movements
+    if (data.playerId !== clientId && pieces[data.pieceId]) {
+      // Use a smooth transition for drag updates
+      const pieceElement = pieces[data.pieceId].element;
+      pieceElement.style.transition = 'transform 0.1s ease-out';
+      movePiece(pieceElement, data.x, data.y);
+
+      // Remove the transition after it completes to allow for crisp movement
+      setTimeout(() => {
+        pieceElement.style.transition = '';
+      }, 100);
     }
   });
 
@@ -454,8 +494,13 @@ function makeElementDraggable(element) {
     const dy = clientY - startY;
 
     // Set new position directly
-    element.style.left = `${initialX + dx}px`;
-    element.style.top = `${initialY + dy}px`;
+    const newX = initialX + dx;
+    const newY = initialY + dy;
+    element.style.left = `${newX}px`;
+    element.style.top = `${newY}px`;
+
+    // Send drag updates to server (throttled)
+    sendDragUpdate(element.dataset.pieceId, newX, newY);
   }
 
   function stopDrag(e) {
@@ -479,16 +524,12 @@ function makeElementDraggable(element) {
 
     const pieceId = element.dataset.pieceId;
 
-    // Send final position to server
+    // Send final position to server to persist the change
     if (pieces[pieceId] && socket.connected) {
       const x = parseInt(element.style.left) || 0;
       const y = parseInt(element.style.top) || 0;
 
-      // Update our local state
-      pieces[pieceId].x = x;
-      pieces[pieceId].y = y;
-
-      // Send to server
+      // Send to server (this persists the position)
       socket.emit('move-piece', {
         pieceId,
         x,
@@ -503,8 +544,16 @@ function makeElementDraggable(element) {
 
 // Move a piece to a specific position
 function movePiece(element, x, y) {
+  // Set the position of the piece
   element.style.left = `${x}px`;
   element.style.top = `${y}px`;
+
+  // Also update our local piece state if this piece is in our pieces object
+  const pieceId = element.dataset.pieceId;
+  if (pieces[pieceId]) {
+    pieces[pieceId].x = x;
+    pieces[pieceId].y = y;
+  }
 }
 
 // Update the player count display

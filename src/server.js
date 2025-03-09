@@ -199,7 +199,30 @@ io.on('connection', (socket) => {
             socket.emit('error', 'Failed to release token');
         }
     });
+    // Broadcast piece dragging in real-time
+    socket.on('drag-piece', async (data) => {
+        try {
+            const { pieceId, x, y } = data;
 
+            // Check if player has authority to move this piece
+            const hasAuthority = await tokenService.hasAuthority(pieceId, socket.id);
+
+            if (!hasAuthority) {
+                return; // Silently fail for drag events to avoid flooding errors
+            }
+
+            // Broadcast drag to all clients except the sender
+            socket.broadcast.emit('piece-dragged', {
+                pieceId,
+                x,
+                y,
+                playerId: socket.id
+            });
+        } catch (err) {
+            console.error('Error broadcasting drag:', err);
+            // Don't send error to client to avoid overwhelming during frequent drag events
+        }
+    });
     // Move a piece
     socket.on('move-piece', async (data) => {
         try {
